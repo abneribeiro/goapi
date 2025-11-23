@@ -1,0 +1,46 @@
+### Register a new user
+# @name register
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+    "email": "newuser@example.com",
+    "password": "Password123",
+    "name": "New User",
+    "phone": "+1234567890",
+    "role": "renter"
+}
+
+### Login
+# @name login
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "owner@example.com",
+    "password": "Password123"
+}
+
+### Login as renter
+# @name loginRenter
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "renter@example.com",
+    "password": "Password123"
+}
+
+### Get current user profile
+GET http://localhost:8080/api/v1/users/me
+Authorization: Bearer {{login.response.body.data.token}}
+
+### Update current user profile
+PUT http://localhost:8080/api/v1/users/me
+Authorization: Bearer {{login.response.body.data.token}}
+Content-Type: application/json
+
+{
+    "name": "Updated Name",
+    "phone": "+9999999999"
+}

@@ -1,0 +1,23 @@
+### Variables
+@token = YOUR_JWT_TOKEN_HERE
+@notificationId = YOUR_NOTIFICATION_ID_HERE
+
+### List all notifications
+GET http://localhost:8080/api/v1/notifications?page=1&per_page=20
+Authorization: Bearer {{token}}
+
+### Get unread notifications count
+GET http://localhost:8080/api/v1/notifications/unread-count
+Authorization: Bearer {{token}}
+
+### Mark notification as read
+PUT http://localhost:8080/api/v1/notifications/{{notificationId}}/read
+Authorization: Bearer {{token}}
+
+### Mark all notifications as read
+PUT http://localhost:8080/api/v1/notifications/read-all
+Authorization: Bearer {{token}}
+
+### Delete notification
+DELETE http://localhost:8080/api/v1/notifications/{{notificationId}}
+Authorization: Bearer {{token}}

@@ -1,0 +1,57 @@
+### Variables - Set your token after logging in
+@token = YOUR_JWT_TOKEN_HERE
+@equipmentId = YOUR_EQUIPMENT_ID_HERE
+
+### List all equipment (public)
+GET http://localhost:8080/api/v1/equipment?page=1&per_page=10
+
+### List equipment with filters
+GET http://localhost:8080/api/v1/equipment?category=Photography&location=New York&available=true
+
+### Search equipment
+GET http://localhost:8080/api/v1/equipment/search?q=camera&page=1&per_page=10
+
+### Get equipment categories
+GET http://localhost:8080/api/v1/equipment/categories
+
+### Get equipment by ID
+GET http://localhost:8080/api/v1/equipment/{{equipmentId}}
+
+### Get equipment availability
+GET http://localhost:8080/api/v1/equipment/{{equipmentId}}/availability?start_date=2024-01-01&end_date=2024-01-31
+
+### Create new equipment (requires auth)
+POST http://localhost:8080/api/v1/equipment
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name": "GoPro Hero 12",
+    "description": "Action camera perfect for sports and adventures. Waterproof up to 10m.",
+    "category": "Cameras",
+    "price_per_day": 25.00,
+    "price_per_week": 100.00,
+    "location": "Miami, FL",
+    "auto_approve": true
+}
+
+### Update equipment
+PUT http://localhost:8080/api/v1/equipment/{{equipmentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name": "GoPro Hero 12 Black",
+    "price_per_day": 30.00,
+    "available": true
+}
+
+### Delete equipment
+DELETE http://localhost:8080/api/v1/equipment/{{equipmentId}}
+Authorization: Bearer {{token}}
+
+### Upload equipment photo (use curl or form-data tool)
+# curl -X POST http://localhost:8080/api/v1/equipment/{id}/photos \
+#   -H "Authorization: Bearer YOUR_TOKEN" \
+#   -F "photo=@/path/to/photo.jpg" \
+#   -F "is_primary=true"

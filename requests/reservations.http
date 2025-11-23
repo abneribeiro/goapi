@@ -1,0 +1,54 @@
+### Variables
+@token = YOUR_JWT_TOKEN_HERE
+@ownerToken = OWNER_JWT_TOKEN_HERE
+@equipmentId = YOUR_EQUIPMENT_ID_HERE
+@reservationId = YOUR_RESERVATION_ID_HERE
+
+### Create a reservation (as renter)
+POST http://localhost:8080/api/v1/reservations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "equipment_id": "{{equipmentId}}",
+    "start_date": "2024-02-01T09:00:00Z",
+    "end_date": "2024-02-03T18:00:00Z"
+}
+
+### List my reservations (as renter)
+GET http://localhost:8080/api/v1/reservations?page=1&per_page=10
+Authorization: Bearer {{token}}
+
+### List reservations for my equipment (as owner)
+GET http://localhost:8080/api/v1/reservations/owner?page=1&per_page=10
+Authorization: Bearer {{ownerToken}}
+
+### Get reservation by ID
+GET http://localhost:8080/api/v1/reservations/{{reservationId}}
+Authorization: Bearer {{token}}
+
+### Approve reservation (as equipment owner)
+PUT http://localhost:8080/api/v1/reservations/{{reservationId}}/approve
+Authorization: Bearer {{ownerToken}}
+
+### Reject reservation (as equipment owner)
+PUT http://localhost:8080/api/v1/reservations/{{reservationId}}/reject
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+    "reason": "Equipment is under maintenance"
+}
+
+### Cancel reservation (as renter or owner)
+PUT http://localhost:8080/api/v1/reservations/{{reservationId}}/cancel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "reason": "Plans changed"
+}
+
+### Complete reservation (as owner)
+PUT http://localhost:8080/api/v1/reservations/{{reservationId}}/complete
+Authorization: Bearer {{ownerToken}}
