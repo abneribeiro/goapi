@@ -1,0 +1,1729 @@
+openapi: 3.1.0
+info:
+  title: Equipment Rental API
+  description: |
+    A comprehensive RESTful API for equipment rental management. This API enables users to rent equipment from owners, manage reservations, and handle the complete rental lifecycle.
+
+    ## Features
+    - **User Management**: Register and authenticate users with JWT tokens
+    - **Equipment Catalog**: Browse, search, and filter available equipment
+    - **Reservation System**: Create and manage equipment reservations with approval workflows
+    - **Notification System**: Real-time notifications for reservation updates
+
+    ## Authentication
+    This API uses **JWT Bearer tokens** for authentication. After logging in, include the token in the `Authorization` header:
+    ```
+    Authorization: Bearer <your_token>
+    ```
+
+    ## User Roles
+    - **Owner**: Can list equipment for rent, approve/reject reservations
+    - **Renter**: Can browse equipment and make reservations
+
+    ## Reservation Workflow
+    1. Renter creates a reservation request
+    2. Owner approves or rejects (or auto-approve if enabled)
+    3. Renter uses the equipment during the reservation period
+    4. Owner marks the reservation as completed
+
+  version: 1.0.0
+  contact:
+    name: Abner Ribeiro
+    url: https://github.com/abneribeiro
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.equipmentrental.com
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User registration and login endpoints
+  - name: Users
+    description: User profile management
+  - name: Equipment
+    description: Equipment catalog and management
+  - name: Reservations
+    description: Reservation lifecycle management
+  - name: Notifications
+    description: User notification system
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Returns the health status of the API
+      operationId: healthCheck
+      tags: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user
+      description: |
+        Creates a new user account. The password must meet the following requirements:
+        - Minimum 8 characters
+        - At least 1 uppercase letter
+        - At least 1 number
+        - At least 1 special character
+      operationId: registerUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            examples:
+              owner:
+                summary: Register as equipment owner
+                value:
+                  email: owner@example.com
+                  password: SecurePass123!
+                  name: John Owner
+                  phone: "+1234567890"
+                  role: owner
+              renter:
+                summary: Register as renter
+                value:
+                  email: renter@example.com
+                  password: SecurePass123!
+                  name: Jane Renter
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: VALIDATION_ERROR
+                  message: "Password must be at least 8 characters"
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: EMAIL_EXISTS
+                  message: "Email already registered"
+
+  /api/v1/auth/login:
+    post:
+      summary: Login user
+      description: Authenticates a user and returns a JWT token for subsequent requests
+      operationId: loginUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: user@example.com
+              password: SecurePass123!
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_CREDENTIALS
+                  message: "Invalid email or password"
+
+  /api/v1/users/me:
+    get:
+      summary: Get current user profile
+      description: Returns the profile information of the authenticated user
+      operationId: getCurrentUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuccessResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+    put:
+      summary: Update current user profile
+      description: Updates the profile information of the authenticated user
+      operationId: updateCurrentUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+            example:
+              name: John Updated
+              phone: "+1987654321"
+      responses:
+        '200':
+          description: User profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/equipment:
+    get:
+      summary: List all equipment
+      description: Returns a paginated list of all available equipment with optional filtering
+      operationId: listEquipment
+      tags:
+        - Equipment
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: category
+          in: query
+          description: Filter by equipment category
+          schema:
+            type: string
+        - name: location
+          in: query
+          description: Filter by location
+          schema:
+            type: string
+        - name: available
+          in: query
+          description: Filter by availability status
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Equipment list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentListResponse'
+
+    post:
+      summary: Create new equipment
+      description: Creates a new equipment listing. Only authenticated users can create equipment and will become the owner.
+      operationId: createEquipment
+      tags:
+        - Equipment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEquipmentRequest'
+            example:
+              name: Professional Camera
+              description: High-quality DSLR camera with multiple lenses
+              category: Photography
+              price_per_hour: 15.00
+              price_per_day: 100.00
+              price_per_week: 500.00
+              location: New York, NY
+              latitude: 40.7128
+              longitude: -74.0060
+              auto_approve: false
+      responses:
+        '201':
+          description: Equipment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentSuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/equipment/search:
+    get:
+      summary: Search equipment
+      description: Search equipment by name or description using a text query
+      operationId: searchEquipment
+      tags:
+        - Equipment
+      parameters:
+        - name: q
+          in: query
+          description: Search query string
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Search results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentListResponse'
+
+  /api/v1/equipment/categories:
+    get:
+      summary: Get all categories
+      description: Returns a list of all unique equipment categories
+      operationId: getCategories
+      tags:
+        - Equipment
+      responses:
+        '200':
+          description: Categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      - Photography
+                      - Construction
+                      - Audio/Video
+                      - Sports
+                      - Tools
+
+  /api/v1/equipment/{id}:
+    get:
+      summary: Get equipment by ID
+      description: Returns detailed information about a specific equipment item
+      operationId: getEquipmentById
+      tags:
+        - Equipment
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      responses:
+        '200':
+          description: Equipment retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentSuccessResponse'
+        '400':
+          description: Invalid ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Equipment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update equipment
+      description: Updates an existing equipment listing. Only the owner can update their equipment.
+      operationId: updateEquipment
+      tags:
+        - Equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEquipmentRequest'
+            example:
+              name: Updated Camera Name
+              price_per_day: 120.00
+              available: true
+      responses:
+        '200':
+          description: Equipment updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentSuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Equipment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete equipment
+      description: Deletes an equipment listing. Only the owner can delete their equipment.
+      operationId: deleteEquipment
+      tags:
+        - Equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      responses:
+        '200':
+          description: Equipment deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Equipment deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Equipment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/equipment/{id}/availability:
+    get:
+      summary: Get equipment availability
+      description: Returns the availability calendar for an equipment item within a date range
+      operationId: getEquipmentAvailability
+      tags:
+        - Equipment
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+        - name: start_date
+          in: query
+          description: Start date for availability check (YYYY-MM-DD format)
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          description: End date for availability check (YYYY-MM-DD format)
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Availability retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EquipmentAvailability'
+        '400':
+          description: Invalid date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Equipment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/equipment/{id}/photos:
+    post:
+      summary: Upload equipment photo
+      description: Uploads a photo for an equipment item. Only the owner can upload photos. Supports JPG, PNG, and GIF formats up to 10MB.
+      operationId: uploadEquipmentPhoto
+      tags:
+        - Equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - photo
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: The photo file to upload
+                is_primary:
+                  type: boolean
+                  description: Set as primary photo for the equipment
+                  default: false
+      responses:
+        '201':
+          description: Photo uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/EquipmentPhoto'
+        '400':
+          description: Invalid file or missing photo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /api/v1/reservations:
+    get:
+      summary: List my reservations
+      description: Returns a paginated list of reservations made by the authenticated user
+      operationId: listMyReservations
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Reservations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+    post:
+      summary: Create reservation
+      description: |
+        Creates a new reservation request for an equipment item.
+        - Start date must be today or in the future
+        - End date must be after start date
+        - Equipment must be available for the requested dates
+        - If equipment has auto_approve enabled, reservation is automatically approved
+      operationId: createReservation
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationRequest'
+            example:
+              equipment_id: "123e4567-e89b-12d3-a456-426614174000"
+              start_date: "2024-12-01T09:00:00Z"
+              end_date: "2024-12-05T18:00:00Z"
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '400':
+          description: Validation error or invalid dates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Equipment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Equipment unavailable for requested dates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAVAILABLE
+                  message: "Equipment is not available for the requested dates"
+
+  /api/v1/reservations/owner:
+    get:
+      summary: List reservations for my equipment
+      description: Returns a paginated list of reservations for equipment owned by the authenticated user
+      operationId: listOwnerReservations
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Reservations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/reservations/{id}:
+    get:
+      summary: Get reservation by ID
+      description: Returns detailed information about a specific reservation. User must be the renter or equipment owner.
+      operationId: getReservationById
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      responses:
+        '200':
+          description: Reservation retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/reservations/{id}/approve:
+    put:
+      summary: Approve reservation
+      description: Approves a pending reservation. Only the equipment owner can approve reservations.
+      operationId: approveReservation
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      responses:
+        '200':
+          description: Reservation approved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '400':
+          description: Reservation is not in pending status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "Reservation is not pending"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/reservations/{id}/reject:
+    put:
+      summary: Reject reservation
+      description: Rejects a pending reservation with an optional reason. Only the equipment owner can reject reservations.
+      operationId: rejectReservation
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelReservationRequest'
+            example:
+              reason: "Equipment is under maintenance during this period"
+      responses:
+        '200':
+          description: Reservation rejected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '400':
+          description: Reservation is not in pending status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/reservations/{id}/cancel:
+    put:
+      summary: Cancel reservation
+      description: |
+        Cancels a reservation with an optional reason.
+        - Pending reservations can be cancelled by the renter
+        - Approved reservations can only be cancelled with 24 hours notice before start date
+      operationId: cancelReservation
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelReservationRequest'
+            example:
+              reason: "Plans changed, no longer need the equipment"
+      responses:
+        '200':
+          description: Reservation cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '400':
+          description: Cannot cancel reservation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: CANNOT_CANCEL
+                  message: "Cannot cancel approved reservation within 24 hours of start date"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/reservations/{id}/complete:
+    put:
+      summary: Complete reservation
+      description: Marks a reservation as completed when the equipment is returned. Only the equipment owner can complete reservations.
+      operationId: completeReservation
+      tags:
+        - Reservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      responses:
+        '200':
+          description: Reservation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationSuccessResponse'
+        '400':
+          description: Reservation is not in approved status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications:
+    get:
+      summary: List notifications
+      description: Returns a paginated list of notifications for the authenticated user
+      operationId: listNotifications
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Notifications retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/notifications/unread-count:
+    get:
+      summary: Get unread notification count
+      description: Returns the count of unread notifications for the authenticated user
+      operationId: getUnreadNotificationCount
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unread count retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                        example: 5
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/notifications/{id}/read:
+    put:
+      summary: Mark notification as read
+      description: Marks a specific notification as read
+      operationId: markNotificationAsRead
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSuccessResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications/read-all:
+    put:
+      summary: Mark all notifications as read
+      description: Marks all notifications as read for the authenticated user
+      operationId: markAllNotificationsAsRead
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: All notifications marked as read
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/v1/notifications/{id}:
+    delete:
+      summary: Delete notification
+      description: Deletes a specific notification
+      operationId: deleteNotification
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Notification deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Notification deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from the login endpoint.
+        Include in the Authorization header as: `Bearer <token>`
+
+  parameters:
+    EquipmentId:
+      name: id
+      in: path
+      required: true
+      description: Equipment UUID
+      schema:
+        type: string
+        format: uuid
+
+    ReservationId:
+      name: id
+      in: path
+      required: true
+      description: Reservation UUID
+      schema:
+        type: string
+        format: uuid
+
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      description: Notification UUID
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    UnauthorizedError:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: "Missing or invalid authentication token"
+
+    ForbiddenError:
+      description: User does not have permission to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: FORBIDDEN
+              message: "You do not have permission to perform this action"
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique user identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        name:
+          type: string
+          description: User full name
+          example: "John Doe"
+        phone:
+          type: string
+          description: User phone number
+          example: "+1234567890"
+        role:
+          type: string
+          enum: [owner, renter]
+          description: User role in the system
+          example: "renter"
+        verified:
+          type: boolean
+          description: Whether the user's email is verified
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last profile update timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: Valid email address
+          example: "user@example.com"
+        password:
+          type: string
+          minLength: 8
+          description: |
+            Password requirements:
+            - Minimum 8 characters
+            - At least 1 uppercase letter
+            - At least 1 number
+            - At least 1 special character
+          example: "SecurePass123!"
+        name:
+          type: string
+          description: User full name
+          example: "John Doe"
+        phone:
+          type: string
+          description: Phone number (optional)
+          example: "+1234567890"
+        role:
+          type: string
+          enum: [owner, renter]
+          default: renter
+          description: User role (defaults to renter)
+          example: "renter"
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Updated full name
+          example: "John Updated"
+        phone:
+          type: string
+          description: Updated phone number
+          example: "+1987654321"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: Registered email address
+          example: "user@example.com"
+        password:
+          type: string
+          description: Account password
+          example: "SecurePass123!"
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT authentication token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        user:
+          $ref: '#/components/schemas/User'
+
+    Equipment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique equipment identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        owner_id:
+          type: string
+          format: uuid
+          description: ID of the equipment owner
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        owner:
+          $ref: '#/components/schemas/User'
+        name:
+          type: string
+          description: Equipment name
+          example: "Professional Camera"
+        description:
+          type: string
+          description: Detailed equipment description
+          example: "High-quality DSLR camera with multiple lenses"
+        category:
+          type: string
+          description: Equipment category
+          example: "Photography"
+        price_per_hour:
+          type: number
+          format: float
+          nullable: true
+          description: Rental price per hour
+          example: 15.00
+        price_per_day:
+          type: number
+          format: float
+          nullable: true
+          description: Rental price per day
+          example: 100.00
+        price_per_week:
+          type: number
+          format: float
+          nullable: true
+          description: Rental price per week
+          example: 500.00
+        location:
+          type: string
+          description: Equipment location
+          example: "New York, NY"
+        latitude:
+          type: number
+          format: float
+          nullable: true
+          description: Location latitude
+          example: 40.7128
+        longitude:
+          type: number
+          format: float
+          nullable: true
+          description: Location longitude
+          example: -74.0060
+        available:
+          type: boolean
+          description: Whether the equipment is currently available
+          example: true
+        auto_approve:
+          type: boolean
+          description: Whether reservations are automatically approved
+          example: false
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EquipmentPhoto'
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    EquipmentPhoto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Photo identifier
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        equipment_id:
+          type: string
+          format: uuid
+          description: Associated equipment ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        url:
+          type: string
+          description: Photo URL
+          example: "/uploads/photo-123.jpg"
+        is_primary:
+          type: boolean
+          description: Whether this is the primary photo
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: Upload timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    CreateEquipmentRequest:
+      type: object
+      required:
+        - name
+        - category
+      properties:
+        name:
+          type: string
+          description: Equipment name
+          example: "Professional Camera"
+        description:
+          type: string
+          description: Detailed description
+          example: "High-quality DSLR camera with multiple lenses"
+        category:
+          type: string
+          description: Equipment category
+          example: "Photography"
+        price_per_hour:
+          type: number
+          format: float
+          description: Price per hour (at least one price is required)
+          example: 15.00
+        price_per_day:
+          type: number
+          format: float
+          description: Price per day
+          example: 100.00
+        price_per_week:
+          type: number
+          format: float
+          description: Price per week
+          example: 500.00
+        location:
+          type: string
+          description: Equipment location
+          example: "New York, NY"
+        latitude:
+          type: number
+          format: float
+          description: Location latitude
+          example: 40.7128
+        longitude:
+          type: number
+          format: float
+          description: Location longitude
+          example: -74.0060
+        auto_approve:
+          type: boolean
+          default: false
+          description: Auto-approve reservations
+          example: false
+
+    UpdateEquipmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Updated equipment name
+          example: "Updated Camera Name"
+        description:
+          type: string
+          description: Updated description
+        category:
+          type: string
+          description: Updated category
+        price_per_hour:
+          type: number
+          format: float
+          description: Updated hourly price
+        price_per_day:
+          type: number
+          format: float
+          description: Updated daily price
+          example: 120.00
+        price_per_week:
+          type: number
+          format: float
+          description: Updated weekly price
+        location:
+          type: string
+          description: Updated location
+        latitude:
+          type: number
+          format: float
+          description: Updated latitude
+        longitude:
+          type: number
+          format: float
+          description: Updated longitude
+        available:
+          type: boolean
+          description: Updated availability status
+          example: true
+        auto_approve:
+          type: boolean
+          description: Updated auto-approve setting
+
+    EquipmentAvailability:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: The date being checked
+          example: "2024-01-15T00:00:00Z"
+        available:
+          type: boolean
+          description: Whether equipment is available on this date
+          example: true
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique reservation identifier
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        equipment_id:
+          type: string
+          format: uuid
+          description: Reserved equipment ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        equipment:
+          $ref: '#/components/schemas/Equipment'
+        renter_id:
+          type: string
+          format: uuid
+          description: Renter user ID
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        renter:
+          $ref: '#/components/schemas/User'
+        start_date:
+          type: string
+          format: date-time
+          description: Reservation start date and time
+          example: "2024-12-01T09:00:00Z"
+        end_date:
+          type: string
+          format: date-time
+          description: Reservation end date and time
+          example: "2024-12-05T18:00:00Z"
+        status:
+          type: string
+          enum: [pending, approved, cancelled, completed, rejected]
+          description: Current reservation status
+          example: "pending"
+        total_price:
+          type: number
+          format: float
+          description: Calculated total rental price
+          example: 400.00
+        cancellation_reason:
+          type: string
+          description: Reason for cancellation or rejection
+          example: "Plans changed"
+        created_at:
+          type: string
+          format: date-time
+          description: Reservation creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    CreateReservationRequest:
+      type: object
+      required:
+        - equipment_id
+        - start_date
+        - end_date
+      properties:
+        equipment_id:
+          type: string
+          format: uuid
+          description: ID of the equipment to reserve
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        start_date:
+          type: string
+          format: date-time
+          description: Reservation start date (must be today or future)
+          example: "2024-12-01T09:00:00Z"
+        end_date:
+          type: string
+          format: date-time
+          description: Reservation end date (must be after start date)
+          example: "2024-12-05T18:00:00Z"
+
+    CancelReservationRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Reason for cancellation or rejection
+          example: "Plans changed, no longer need the equipment"
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique notification identifier
+          example: "123e4567-e89b-12d3-a456-426614174004"
+        user_id:
+          type: string
+          format: uuid
+          description: Recipient user ID
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        type:
+          type: string
+          enum:
+            - reservation_created
+            - reservation_approved
+            - reservation_rejected
+            - reservation_cancelled
+            - reservation_completed
+            - reservation_reminder
+            - equipment_returned
+            - payment_received
+          description: Type of notification
+          example: "reservation_approved"
+        title:
+          type: string
+          description: Notification title
+          example: "Reservation Approved"
+        message:
+          type: string
+          description: Notification message content
+          example: "Your reservation for Professional Camera has been approved"
+        read:
+          type: boolean
+          description: Whether the notification has been read
+          example: false
+        reference_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID of the related resource (e.g., reservation ID)
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        reference_type:
+          type: string
+          description: Type of the related resource
+          example: "reservation"
+        created_at:
+          type: string
+          format: date-time
+          description: Notification creation timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    Meta:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Items per page
+          example: 10
+        total:
+          type: integer
+          format: int64
+          description: Total number of items
+          example: 50
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 5
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Error code for programmatic handling
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              description: Human-readable error message
+              example: "Email is required"
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/AuthResponse'
+
+    UserSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/User'
+
+    EquipmentSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Equipment'
+
+    EquipmentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Equipment'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ReservationSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Reservation'
+
+    ReservationListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reservation'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    NotificationSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Notification'
+
+    NotificationListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/Meta'
